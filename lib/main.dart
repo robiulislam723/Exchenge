@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'services/api.dart';
+import 'services/update_service.dart';
 import 'models/models.dart';
 
 void main() async {
@@ -171,6 +172,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) UpdateService.check(context);
+    });
   }
 
   Future<void> _load() async {
@@ -704,6 +708,12 @@ class MoreScreen extends StatelessWidget {
             title: const Text('Expenses'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ExpensesScreen())),
+          ),
+          ListTile(
+            leading: const Icon(Icons.system_update),
+            title: const Text('Check for updates'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => UpdateService.check(context, silent: false),
           ),
           const Divider(),
           ListTile(

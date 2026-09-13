@@ -10,6 +10,9 @@ on:
         required: false
         default: "https://exchenge.narailexpress.net"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -43,13 +46,27 @@ jobs:
           grep -n "INTERNET" "$manifest"
           flutter pub get
 
+      - name: Read app version
+        id: version
+        run: |
+          ver=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
+          echo "tag=v$ver" >> "$GITHUB_OUTPUT"
+
       - name: Build release APK
         run: |
           flutter build apk --release --dart-define=API_BASE=${{ github.event.inputs.api_base || 'https://exchenge.narailexpress.net' }}
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: exchenge-mobile-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+
+      - name: Publish GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Exchenge Mobile ${{ steps.version.outputs.tag }}"
+          generate_release_notes: true
+          files: build/app/outputs/flutter-apk/app-release.apk
