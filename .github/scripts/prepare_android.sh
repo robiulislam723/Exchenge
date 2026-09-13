@@ -15,11 +15,18 @@ cp -r /tmp/lib_backup lib
 
 manifest=android/app/src/main/AndroidManifest.xml
 
-if ! grep -q "android.permission.INTERNET" "$manifest"; then
-  sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n    <application#' "$manifest"
-elif ! grep -q "android.permission.REQUEST_INSTALL_PACKAGES" "$manifest"; then
-  sed -i 's#<application#<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n    <application#' "$manifest"
-fi
+# Permissions: internet, camera/gallery uploads, and in-app APK installs.
+add_permission() {
+  local perm="$1"
+  if ! grep -q "android.permission.${perm}" "$manifest"; then
+    sed -i "s#<application#<uses-permission android:name=\"android.permission.${perm}\"/>\n    <application#" "$manifest"
+  fi
+}
+
+add_permission INTERNET
+add_permission ACCESS_NETWORK_STATE
+add_permission READ_MEDIA_IMAGES
+add_permission REQUEST_INSTALL_PACKAGES
 
 if ! grep -q "androidx.core.content.FileProvider" "$manifest"; then
   provider='        <provider\n            android:name="androidx.core.content.FileProvider"\n            android:authorities="${applicationId}.fileprovider"\n            android:exported="false"\n            android:grantUriPermissions="true">\n            <meta-data\n                android:name="android.support.FILE_PROVIDER_PATHS"\n                android:resource="@xml/file_paths" />\n        </provider>\n    </application>'
@@ -36,5 +43,5 @@ cat > android/app/src/main/res/xml/file_paths.xml <<'XML'
 </paths>
 XML
 
-grep -n "INTERNET\|REQUEST_INSTALL_PACKAGES\|FileProvider" "$manifest" || true
+grep -n "uses-permission\|FileProvider" "$manifest" || true
 flutter pub get
