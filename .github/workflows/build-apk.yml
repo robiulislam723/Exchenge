@@ -35,6 +35,12 @@ jobs:
           if [ ! -d "android" ]; then
             flutter create --project-name exchenge_mobile --platforms=android .
           fi
+          # Release builds need INTERNET permission in the main manifest.
+          manifest=android/app/src/main/AndroidManifest.xml
+          if ! grep -q "android.permission.INTERNET" "$manifest"; then
+            sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' "$manifest"
+          fi
+          grep -n "INTERNET" "$manifest"
           flutter pub get
 
       - name: Build release APK
