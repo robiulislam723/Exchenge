@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'services/api.dart';
 import 'models/models.dart';
@@ -742,6 +743,17 @@ class _BanksScreenState extends State<BanksScreen> {
     }).catchError((_) => setState(() => _loading = false));
   }
 
+  Future<void> _copyBank(BankItem b) async {
+    final text = 'Bank Name: ${b.name}\n'
+        'Beneficiary: ${b.beneficiary ?? '-'}\n'
+        'Account Number: ${b.accountNumber ?? '-'}';
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Copied: ${b.name}'), duration: const Duration(seconds: 2)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -758,7 +770,12 @@ class _BanksScreenState extends State<BanksScreen> {
                   title: Text(b.name),
                   subtitle: Text('${b.accountNumber ?? '-'}\nNPSB limit ${b.npsbLimit} • DB2B limit ${b.db2bLimit}'),
                   isThreeLine: true,
-                  trailing: Text('৳ ${money0.format(b.balance)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.copy, color: Colors.indigo),
+                    tooltip: 'Copy bank info',
+                    onPressed: () => _copyBank(b),
+                  ),
+                  onTap: () => _copyBank(b),
                 );
               },
             ),
