@@ -45,12 +45,52 @@ jobs:
           cp /tmp/pubspec.yaml pubspec.yaml
           rm -rf lib
           cp -r /tmp/lib_backup lib
-          # Release builds need INTERNET permission in the main manifest.
+
           manifest=android/app/src/main/AndroidManifest.xml
+
+          # Release builds need INTERNET permission; in-app APK install needs
+          # REQUEST_INSTALL_PACKAGES.
           if ! grep -q "android.permission.INTERNET" "$manifest"; then
-            sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' "$manifest"
+            sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n    <application#' "$manifest"
+          else
+            if ! grep -q "android.permission.REQUEST_INSTALL_PACKAGES" "$manifest"; then
+              sed -i 's#<application#<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n    <application#' "$manifest"
+            fi
           fi
-          grep -n "INTERNET" "$manifest"
+
+          # FileProvider so the downloaded APK can be opened/installed.
+          if ! grep -q "androidx.core.content.FileProvider" "$manifest"; then
+            python3 - "$manifest" <<'PY'
+import sys, re
+p = sys.argv[1]
+s = open(p).read()
+provider = '''
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+'''
+s = s.replace('</application>', provider + '    </application>')
+open(p, 'w').write(s)
+PY
+          fi
+
+          mkdir -p android/app/src/main/res/xml
+          cat > android/app/src/main/res/xml/file_paths.xml <<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="cache" path="." />
+    <files-path name="files" path="." />
+    <external-path name="external" path="." />
+</paths>
+XML
+
+          grep -n "INTERNET\|REQUEST_INSTALL_PACKAGES\|FileProvider" "$manifest"
           flutter pub get
 
       - name: Read app version
