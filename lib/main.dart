@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:pasteboard/pasteboard.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
@@ -60,6 +62,10 @@ class _WebAppScreenState extends State<WebAppScreen> {
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
+      ..addJavaScriptChannel(
+        'NativeClipboard',
+        onMessageReceived: _copyImageToClipboard,
+      )
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (p) => setState(() => _progress = p),
@@ -88,6 +94,19 @@ class _WebAppScreenState extends State<WebAppScreen> {
     }
 
     _controller = controller;
+  }
+
+  Future<void> _copyImageToClipboard(JavaScriptMessage message) async {
+    try {
+      final raw = message.message;
+      final comma = raw.indexOf(',');
+      final encoded = comma >= 0 ? raw.substring(comma + 1) : raw;
+      final bytes = base64Decode(encoded);
+      if (bytes.isEmpty) return;
+      await Pasteboard.writeImage(bytes);
+    } catch (_) {
+      // Ignore: the web page also offers a manual save/download fallback.
+    }
   }
 
   Future<void> _watchConnectivity() async {

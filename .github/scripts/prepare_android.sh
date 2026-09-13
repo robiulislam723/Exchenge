@@ -33,10 +33,25 @@ if ! grep -q "androidx.core.content.FileProvider" "$manifest"; then
   sed -i "s#</application>#${provider}#" "$manifest"
 fi
 
+# pasteboard plugin needs its own FileProvider authority (${applicationId}.provider).
+if ! grep -q "applicationId}.provider" "$manifest"; then
+  provider2='        <provider\n            android:name="androidx.core.content.FileProvider"\n            android:authorities="${applicationId}.provider"\n            android:exported="false"\n            android:grantUriPermissions="true">\n            <meta-data\n                android:name="android.support.FILE_PROVIDER_PATHS"\n                android:resource="@xml/provider_paths" />\n        </provider>\n    </application>'
+  sed -i "s#</application>#${provider2}#" "$manifest"
+fi
+
 mkdir -p android/app/src/main/res/xml
 cat > android/app/src/main/res/xml/file_paths.xml <<'XML'
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
+    <cache-path name="cache" path="." />
+    <files-path name="files" path="." />
+    <external-path name="external" path="." />
+</paths>
+XML
+
+cat > android/app/src/main/res/xml/provider_paths.xml <<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="cache" path="." />
     <files-path name="files" path="." />
     <external-path name="external" path="." />
