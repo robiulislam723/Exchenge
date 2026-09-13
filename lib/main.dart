@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pasteboard/pasteboard.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
@@ -103,7 +106,7 @@ class _WebAppScreenState extends State<WebAppScreen> with WidgetsBindingObserver
       ..setBackgroundColor(Colors.white)
       ..addJavaScriptChannel(
         'NativeClipboard',
-        onMessageReceived: _copyImageToClipboard,
+        onMessageReceived: _handleBridgeMessage,
       )
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -142,68 +145,89 @@ class _WebAppScreenState extends State<WebAppScreen> with WidgetsBindingObserver
   final Map<int, String> _chunks = {};
   int _chunkTotal = 0;
   String _chunkId = '';
+  String _chunkMode = 'C';
 
-  Future<void> _copyImageToClipboard(JavaScriptMessage message) async {
+  // Chunk headers look like: "S<id>-<index>/<total>:<base64>".
+  static final RegExp _chunkHeader = RegExp(r'^([CS])([0-9a-z]+)-(\d+)/(\d+):');
+
+  Future<void> _handleBridgeMessage(JavaScriptMessage message) async {
     final raw = message.message;
 
-    // Chunked protocol: "C<id>-<index>/<total>:<base64-part>".
-    // Large images are split so the WebView JS channel never drops the payload.
-    if (raw.startsWith('C')) {
-      final sep = raw.indexOf(':');
-      if (sep <= 1) return;
-      final head = raw.substring(1, sep); // <id>-<index>/<total>
-      final slash = head.indexOf('/');
-      if (slash <= 0) return;
+    final match = _chunkHeader.firstMatch(raw);
+    if (match != null) {
+      final mode = match.group(1)!;
+      final id = match.group(2)!;
+      final index = int.tryParse(match.group(3)!) ?? -1;
+      final total = int.tryParse(match.group(4)!) ?? -1;
+      if (index < 0 || total <= 0) return;
 
-      final total = int.tryParse(head.substring(slash + 1));
-      final left = head.substring(0, slash);
-      final dash = left.lastIndexOf('-');
-      if (total == null || total <= 0 || dash <= 0) return;
-
-      final id = left.substring(0, dash);
-      final index = int.tryParse(left.substring(dash + 1));
-      if (index == null) return;
-
-      if (id != _chunkId || total != _chunkTotal) {
+      if (id != _chunkId || total != _chunkTotal || mode != _chunkMode) {
         _chunkId = id;
         _chunkTotal = total;
+        _chunkMode = mode;
         _chunks.clear();
       }
-      _chunks[index] = raw.substring(sep + 1);
+      // Everything after the first ':' is the base64 payload.
+      _chunks[index] = raw.substring(raw.indexOf(':') + 1);
 
       if (_chunks.length < _chunkTotal) {
         return; // wait for the remaining parts
       }
 
       final encoded = List.generate(_chunkTotal, (i) => _chunks[i] ?? '').join();
+      final doneMode = _chunkMode;
       _chunks.clear();
       _chunkTotal = 0;
       _chunkId = '';
-      await _writeImage(encoded);
+      await _deliverImage(doneMode, encoded);
       return;
     }
 
-    // Legacy protocol: a single data URL / base64 string.
+    // Legacy single-message protocol: a data URL / raw base64 string.
     final comma = raw.indexOf(',');
-    await _writeImage(comma >= 0 ? raw.substring(comma + 1) : raw);
+    await _deliverImage('C', comma >= 0 ? raw.substring(comma + 1) : raw);
   }
 
-  Future<void> _writeImage(String encoded) async {
-    var ok = false;
-    try {
-      final bytes = base64Decode(encoded);
-      if (bytes.isNotEmpty) {
-        await Pasteboard.writeImage(bytes);
-        ok = true;
-      }
-    } catch (_) {
-      ok = false;
-    }
+  Future<void> _deliverImage(String mode, String encoded) async {
+    final ok = mode == 'S'
+        ? await _shareImage(encoded)
+        : await _clipboardImage(encoded);
     try {
       await _controller.runJavaScript(
+        'window.__shareResult && window.__shareResult(${ok ? 'true' : 'false'});'
         'window.__clipResult && window.__clipResult(${ok ? 'true' : 'false'});',
       );
     } catch (_) {}
+  }
+
+  Future<bool> _clipboardImage(String encoded) async {
+    try {
+      final bytes = base64Decode(encoded);
+      if (bytes.isEmpty) return false;
+      await Pasteboard.writeImage(bytes);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _shareImage(String encoded) async {
+    try {
+      final bytes = base64Decode(encoded);
+      if (bytes.isEmpty) return false;
+      final dir = await getTemporaryDirectory();
+      final file = File(
+        '${dir.path}/user-summary-${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+      await file.writeAsBytes(bytes, flush: true);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'image/jpeg')],
+        text: 'User Summary',
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _watchConnectivity() async {
