@@ -1422,3 +1422,47 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 }
+
+class MoreContent extends StatelessWidget {
+  const MoreContent({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text('Management', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 8),
+        _tile(context, Icons.dashboard, 'Dashboard', const DashboardScreen()),
+        _tile(context, Icons.account_balance, 'Banks', const BanksScreen()),
+        _tile(context, Icons.receipt_long, 'Expenses', const ExpensesScreen()),
+        _tile(context, Icons.add_circle_outline, 'New Exchange', const CreateExchangeScreen()),
+        _tile(context, Icons.person_add_alt_1, 'New User', const CreateUserScreen()),
+        const Divider(height: 32),
+        ListTile(
+          leading: const Icon(Icons.system_update),
+          title: const Text('Check for updates'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => UpdateService.check(context, silent: false),
+        ),
+        ListTile(
+          leading: const Icon(Icons.logout, color: Colors.red),
+          title: const Text('Logout', style: TextStyle(color: Colors.red)),
+          onTap: () async {
+            try { await Api.post('/logout'); } catch (_) {}
+            await Api.setToken(null);
+            if (!context.mounted) return;
+            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _tile(BuildContext context, IconData icon, String title, Widget screen) => ListTile(
+        leading: Icon(icon),
+        title: Text(title),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => screen)),
+      );
+}
