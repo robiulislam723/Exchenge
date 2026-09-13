@@ -865,7 +865,7 @@ class _CreateExchangeScreenState extends State<CreateExchangeScreen> {
                 const SizedBox(height: 16),
                 DropdownButtonFormField<int>(
                   decoration: const InputDecoration(labelText: 'User', border: OutlineInputBorder()),
-                  initialValue: _userId,
+                  value: _userId,
                   items: _users.map((u) => DropdownMenuItem(value: u.id, child: Text(u.fullName, overflow: TextOverflow.ellipsis))).toList(),
                   onChanged: (v) => setState(() => _userId = v),
                 ),
@@ -876,14 +876,14 @@ class _CreateExchangeScreenState extends State<CreateExchangeScreen> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
                   decoration: const InputDecoration(labelText: 'Bank', border: OutlineInputBorder()),
-                  initialValue: _bankId,
+                  value: _bankId,
                   items: _banks.map((b) => DropdownMenuItem(value: b.id, child: Text(b.name, overflow: TextOverflow.ellipsis))).toList(),
                   onChanged: (v) => setState(() => _bankId = v),
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   decoration: const InputDecoration(labelText: 'Channel', border: OutlineInputBorder()),
-                  initialValue: _channel,
+                  value: _channel,
                   items: const [
                     DropdownMenuItem(value: 'NPSB', child: Text('NPSB')),
                     DropdownMenuItem(value: 'BEFTN', child: Text('BEFTN')),
@@ -894,7 +894,7 @@ class _CreateExchangeScreenState extends State<CreateExchangeScreen> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder()),
-                  initialValue: _status,
+                  value: _status,
                   items: const [
                     DropdownMenuItem(value: 'pending', child: Text('Pending')),
                     DropdownMenuItem(value: 'approved', child: Text('Approved')),
