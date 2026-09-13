@@ -53,6 +53,9 @@ class BankItem {
   final String name;
   final String? beneficiary;
   final String? accountNumber;
+  final String? accountType;
+  final String? routing;
+  final String? bankAddress;
   final double balance;
   final int npsbLimit;
   final int db2bLimit;
@@ -62,6 +65,9 @@ class BankItem {
     required this.name,
     this.beneficiary,
     this.accountNumber,
+    this.accountType,
+    this.routing,
+    this.bankAddress,
     required this.balance,
     required this.npsbLimit,
     required this.db2bLimit,
@@ -72,6 +78,9 @@ class BankItem {
         name: (j['name'] ?? '').toString(),
         beneficiary: j['beneficiary_name']?.toString(),
         accountNumber: j['account_number']?.toString(),
+        accountType: j['account_type']?.toString(),
+        routing: j['routing']?.toString(),
+        bankAddress: j['bank_address']?.toString(),
         balance: (j['balance'] ?? 0).toDouble(),
         npsbLimit: (j['npsb_daily_limit'] ?? 20) as int,
         db2bLimit: (j['db2b_daily_limit'] ?? 20) as int,

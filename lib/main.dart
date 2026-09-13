@@ -317,11 +317,167 @@ class _PendingScreenState extends State<PendingScreen> {
                             ],
                           ),
                         );
-                      },
-                    ),
+              },
+            ),
     );
   }
 }
+
+class CreateExchangeScreen extends StatefulWidget {
+  const CreateExchangeScreen({super.key});
+  @override
+  State<CreateExchangeScreen> createState() => _CreateExchangeScreenState();
+}
+
+class _CreateExchangeScreenState extends State<CreateExchangeScreen> {
+  final _qty = TextEditingController();
+  final _rate = TextEditingController();
+  final _orderNumber = TextEditingController();
+  String _type = 'buy';
+  String _channel = 'NPSB';
+  String _status = 'approved';
+  int? _userId;
+  int? _bankId;
+  List<UserItem> _users = [];
+  List<BankItem> _banks = [];
+  bool _loading = true;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRefs();
+  }
+
+  Future<void> _loadRefs() async {
+    try {
+      final results = await Future.wait([Api.get('/users'), Api.get('/banks')]);
+      setState(() {
+        _users = (results[0]['data'] as List).map((e) => UserItem.fromJson(e)).toList();
+        _banks = (results[1]['data'] as List).map((e) => BankItem.fromJson(e)).toList();
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  Future<void> _save() async {
+    if (_userId == null) {
+      setState(() => _error = 'Please select a user');
+      return;
+    }
+    setState(() { _saving = true; _error = null; });
+    try {
+      await Api.post('/exchanges', {
+        'exchange_type': _type,
+        'user_id': _userId,
+        'quantity': double.tryParse(_qty.text) ?? 0,
+        'rate': double.tryParse(_rate.text) ?? 0,
+        'bank_id': _bankId,
+        'transfer_channel': _channel,
+        'exchange_status': _status,
+        'binance_order_number': _orderNumber.text.trim().isEmpty ? null : _orderNumber.text.trim(),
+      });
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('New Exchange')),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'buy', label: Text('Buy')),
+                    ButtonSegment(value: 'sell', label: Text('Sell')),
+                  ],
+                  selected: {_type},
+                  onSelectionChanged: (s) => setState(() => _type = s.first),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<int>(
+                  decoration: const InputDecoration(labelText: 'User', border: OutlineInputBorder()),
+                  value: _userId,
+                  items: _users.map((u) => DropdownMenuItem(value: u.id, child: Text(u.fullName, overflow: TextOverflow.ellipsis))).toList(),
+                  onChanged: (v) => setState(() => _userId = v),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _qty,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Quantity (USDT)', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _rate,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Rate (BDT)', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  decoration: const InputDecoration(labelText: 'Bank', border: OutlineInputBorder()),
+                  value: _bankId,
+                  items: _banks.map((b) => DropdownMenuItem(value: b.id, child: Text(b.name, overflow: TextOverflow.ellipsis))).toList(),
+                  onChanged: (v) => setState(() => _bankId = v),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(labelText: 'Channel', border: OutlineInputBorder()),
+                  value: _channel,
+                  items: const [
+                    DropdownMenuItem(value: 'NPSB', child: Text('NPSB')),
+                    DropdownMenuItem(value: 'BEFTN', child: Text('BEFTN')),
+                    DropdownMenuItem(value: 'DB2B', child: Text('DB2B')),
+                  ],
+                  onChanged: (v) => setState(() => _channel = v ?? 'NPSB'),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder()),
+                  value: _status,
+                  items: const [
+                    DropdownMenuItem(value: 'pending', child: Text('Pending')),
+                    DropdownMenuItem(value: 'approved', child: Text('Approved')),
+                  ],
+                  onChanged: (v) => setState(() => _status = v ?? 'approved'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _orderNumber,
+                  decoration: const InputDecoration(labelText: 'Binance Order Number (optional)', border: OutlineInputBorder()),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!, style: const TextStyle(color: Colors.red)),
+                ],
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: _saving ? null : _save,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: _saving
+                        ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Create Exchange'),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
 
 class ExchangesScreen extends StatefulWidget {
   const ExchangesScreen({super.key});
@@ -369,6 +525,17 @@ class _ExchangesScreenState extends State<ExchangesScreen> {
       appBar: AppBar(
         title: const Text('Exchanges'),
         actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh))],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () async {
+          final created = await Navigator.push<bool>(
+            context,
+            MaterialPageRoute(builder: (_) => const CreateExchangeScreen()),
+          );
+          if (created == true) _load();
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('New Exchange'),
       ),
       body: Column(
         children: [
@@ -756,7 +923,10 @@ class _BanksScreenState extends State<BanksScreen> {
   Future<void> _copyBank(BankItem b) async {
     final text = 'Bank Name: ${b.name}\n'
         'Beneficiary: ${b.beneficiary ?? '-'}\n'
-        'Account Number: ${b.accountNumber ?? '-'}';
+        'Account Number: ${b.accountNumber ?? '-'}\n'
+        'Account Type: ${b.accountType ?? '-'}\n'
+        'Routing: ${b.routing ?? '-'}\n'
+        'Bank Address: ${b.bankAddress ?? '-'}';
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

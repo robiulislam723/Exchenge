@@ -20,20 +20,29 @@ class UpdateService {
         Uri.parse('https://api.github.com/repos/$_owner/$_repo/releases/latest'),
         headers: {'Accept': 'application/vnd.github+json', 'User-Agent': 'exchenge-mobile'},
       );
-      if (res.statusCode != 200) return;
+      if (res.statusCode != 200) {
+        if (!silent && context.mounted) _toast(context, 'Update check failed (${res.statusCode})');
+        return;
+      }
 
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final tag = (data['tag_name'] ?? '').toString();
       final latest = _parseVersion(tag.replaceAll(RegExp(r'[^0-9.]'), ''));
-      if (latest <= current) return;
+      if (latest <= current) {
+        if (!silent && context.mounted) _toast(context, 'You are on the latest version (${info.version})');
+        return;
+      }
 
       // Find the APK asset.
       final assets = (data['assets'] as List?) ?? [];
-      final apk = assets.firstWhere(
-        (a) => (a['name'] ?? '').toString().toLowerCase().endsWith('.apk'),
-        orElse: () => null,
-      );
-      if (apk == null) return;
+      dynamic apk;
+      for (final a in assets) {
+        if ((a['name'] ?? '').toString().toLowerCase().endsWith('.apk')) { apk = a; break; }
+      }
+      if (apk == null) {
+        if (!silent && context.mounted) _toast(context, 'No APK found in the latest release');
+        return;
+      }
 
       final url = apk['browser_download_url'].toString();
       if (!context.mounted) return;
@@ -52,9 +61,13 @@ class UpdateService {
       if (go != true) return;
 
       await _downloadAndInstall(context, url, tag);
-    } catch (_) {
-      // silent on failures
+    } catch (e) {
+      if (!silent && context.mounted) _toast(context, 'Update check failed: $e');
     }
+  }
+
+  static void _toast(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   static Future<void> _downloadAndInstall(BuildContext context, String url, String tag) async {
