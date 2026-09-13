@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pasteboard/pasteboard.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -41,7 +42,9 @@ class WebAppScreen extends StatefulWidget {
   State<WebAppScreen> createState() => _WebAppScreenState();
 }
 
-class _WebAppScreenState extends State<WebAppScreen> {
+class _WebAppScreenState extends State<WebAppScreen> with WidgetsBindingObserver {
+  static const MethodChannel _cookieChannel = MethodChannel('app/cookies');
+
   late final WebViewController _controller;
 
   bool _loading = true;
@@ -51,11 +54,35 @@ class _WebAppScreenState extends State<WebAppScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _buildController();
     _watchConnectivity();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) UpdateService.check(context);
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Persist WebView cookies to disk before the OS kills the app, so the
+    // Laravel session survives and the user stays logged in.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      _flushCookies();
+    }
+  }
+
+  Future<void> _flushCookies() async {
+    try {
+      await _cookieChannel.invokeMethod('flush');
+    } catch (_) {}
   }
 
   void _buildController() {
@@ -97,16 +124,24 @@ class _WebAppScreenState extends State<WebAppScreen> {
   }
 
   Future<void> _copyImageToClipboard(JavaScriptMessage message) async {
+    var ok = false;
     try {
       final raw = message.message;
       final comma = raw.indexOf(',');
       final encoded = comma >= 0 ? raw.substring(comma + 1) : raw;
       final bytes = base64Decode(encoded);
-      if (bytes.isEmpty) return;
-      await Pasteboard.writeImage(bytes);
+      if (bytes.isNotEmpty) {
+        await Pasteboard.writeImage(bytes);
+        ok = true;
+      }
     } catch (_) {
-      // Ignore: the web page also offers a manual save/download fallback.
+      ok = false;
     }
+    try {
+      await _controller.runJavaScript(
+        'window.__clipResult && window.__clipResult(${ok ? 'true' : 'false'});',
+      );
+    } catch (_) {}
   }
 
   Future<void> _watchConnectivity() async {

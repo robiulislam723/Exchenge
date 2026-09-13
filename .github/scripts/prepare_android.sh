@@ -58,5 +58,41 @@ cat > android/app/src/main/res/xml/provider_paths.xml <<'XML'
 </paths>
 XML
 
+# MainActivity: expose a native method channel so Dart can flush WebView
+# cookies to disk on app pause (keeps the Laravel session alive).
+main_activity=$(find android/app/src/main -name MainActivity.kt | head -1)
+if [ -n "$main_activity" ]; then
+  pkg=$(grep -oE '^package[[:space:]]+[^[:space:]]+' "$main_activity" | awk '{print $2}')
+  cat > "$main_activity" <<KT
+package ${pkg}
+
+import android.webkit.CookieManager
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+class MainActivity : FlutterActivity() {
+    private val channelName = "app/cookies"
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
+            .setMethodCallHandler { call, result ->
+                if (call.method == "flush") {
+                    try {
+                        CookieManager.getInstance().flush()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("flush_failed", e.message, null)
+                    }
+                } else {
+                    result.notImplemented()
+                }
+            }
+    }
+}
+KT
+fi
+
 grep -n "uses-permission\|FileProvider" "$manifest" || true
 flutter pub get
