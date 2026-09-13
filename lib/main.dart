@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pasteboard/pasteboard.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -85,6 +86,17 @@ class _WebAppScreenState extends State<WebAppScreen> with WidgetsBindingObserver
     } catch (_) {}
   }
 
+  // Expose the running app version to the page so it can tell whether the
+  // installed build supports the native clipboard bridge.
+  Future<void> _injectAppVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      await _controller.runJavaScript(
+        "window.__appVersion='${info.version}+${info.buildNumber}';",
+      );
+    } catch (_) {}
+  }
+
   void _buildController() {
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -97,7 +109,10 @@ class _WebAppScreenState extends State<WebAppScreen> with WidgetsBindingObserver
         NavigationDelegate(
           onProgress: (p) => setState(() => _progress = p),
           onPageStarted: (_) => setState(() { _loading = true; _hasError = false; }),
-          onPageFinished: (_) => setState(() => _loading = false),
+          onPageFinished: (_) {
+            setState(() => _loading = false);
+            _injectAppVersion();
+          },
           onWebResourceError: (error) {
             if (error.isForMainFrame ?? true) {
               setState(() { _hasError = true; _loading = false; });
@@ -123,12 +138,59 @@ class _WebAppScreenState extends State<WebAppScreen> with WidgetsBindingObserver
     _controller = controller;
   }
 
+  // Reassembly buffers for the chunked base64 image transfer.
+  final Map<int, String> _chunks = {};
+  int _chunkTotal = 0;
+  String _chunkId = '';
+
   Future<void> _copyImageToClipboard(JavaScriptMessage message) async {
+    final raw = message.message;
+
+    // Chunked protocol: "C<id>-<index>/<total>:<base64-part>".
+    // Large images are split so the WebView JS channel never drops the payload.
+    if (raw.startsWith('C')) {
+      final sep = raw.indexOf(':');
+      if (sep <= 1) return;
+      final head = raw.substring(1, sep); // <id>-<index>/<total>
+      final slash = head.indexOf('/');
+      if (slash <= 0) return;
+
+      final total = int.tryParse(head.substring(slash + 1));
+      final left = head.substring(0, slash);
+      final dash = left.lastIndexOf('-');
+      if (total == null || total <= 0 || dash <= 0) return;
+
+      final id = left.substring(0, dash);
+      final index = int.tryParse(left.substring(dash + 1));
+      if (index == null) return;
+
+      if (id != _chunkId || total != _chunkTotal) {
+        _chunkId = id;
+        _chunkTotal = total;
+        _chunks.clear();
+      }
+      _chunks[index] = raw.substring(sep + 1);
+
+      if (_chunks.length < _chunkTotal) {
+        return; // wait for the remaining parts
+      }
+
+      final encoded = List.generate(_chunkTotal, (i) => _chunks[i] ?? '').join();
+      _chunks.clear();
+      _chunkTotal = 0;
+      _chunkId = '';
+      await _writeImage(encoded);
+      return;
+    }
+
+    // Legacy protocol: a single data URL / base64 string.
+    final comma = raw.indexOf(',');
+    await _writeImage(comma >= 0 ? raw.substring(comma + 1) : raw);
+  }
+
+  Future<void> _writeImage(String encoded) async {
     var ok = false;
     try {
-      final raw = message.message;
-      final comma = raw.indexOf(',');
-      final encoded = comma >= 0 ? raw.substring(comma + 1) : raw;
       final bytes = base64Decode(encoded);
       if (bytes.isNotEmpty) {
         await Pasteboard.writeImage(bytes);
