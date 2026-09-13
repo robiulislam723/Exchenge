@@ -6,6 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+import 'services/update_service.dart';
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const ExchangeApp());
@@ -49,6 +51,9 @@ class _WebAppScreenState extends State<WebAppScreen> {
     super.initState();
     _buildController();
     _watchConnectivity();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) UpdateService.check(context);
+    });
   }
 
   void _buildController() {
@@ -118,16 +123,35 @@ class _WebAppScreenState extends State<WebAppScreen> {
                         setState(() { _hasError = false; _loading = true; });
                         _controller.reload();
                       })
-                    : RefreshIndicator(
-                        onRefresh: () async {
-                          await _controller.reload();
-                          await Future.delayed(const Duration(milliseconds: 600));
-                        },
-                        child: WebViewWidget(controller: _controller),
-                      ),
+                    : WebViewWidget(controller: _controller),
               ),
             ],
           ),
+        ),
+        floatingActionButton: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FloatingActionButton.small(
+              heroTag: 'refresh',
+              backgroundColor: const Color(0xFF2563EB),
+              foregroundColor: Colors.white,
+              tooltip: 'Refresh',
+              onPressed: () {
+                setState(() => _loading = true);
+                _controller.reload();
+              },
+              child: const Icon(Icons.refresh),
+            ),
+            const SizedBox(height: 10),
+            FloatingActionButton.small(
+              heroTag: 'top',
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF2563EB),
+              tooltip: 'Back to top',
+              onPressed: () => _controller.runJavaScript('window.scrollTo({top:0,behavior:"smooth"});'),
+              child: const Icon(Icons.vertical_align_top),
+            ),
+          ],
         ),
       ),
     );
