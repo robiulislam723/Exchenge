@@ -103,15 +103,24 @@ fi
 # so installing an update forces an uninstall — which wipes app data (cookies)
 # and logs the user out. Signing every build with the same keystore lets
 # updates install in place and keeps the session.
+# Handles both the Groovy (build.gradle) and Kotlin (build.gradle.kts) DSL, and
+# fails the build if the wiring could not be applied.
 # ---------------------------------------------------------------------------
-if [ -f signing/release.jks ]; then
-  cp signing/release.jks android/app/release.jks
-  cp signing/key.properties android/key.properties
+if [ ! -f signing/release.jks ]; then
+  echo "ERROR: signing/release.jks missing — refusing to publish a debug-signed APK"
+  exit 1
+fi
 
-  python3 - <<'PY'
-path = 'android/app/build.gradle'
-s = open(path).read()
-if 'signingConfigs.release' not in s:
+cp signing/release.jks android/app/release.jks
+cp signing/key.properties android/key.properties
+
+python3 - <<'PY'
+import os
+
+def patch_groovy(path):
+    s = open(path).read()
+    if "signingConfigs.release" in s:
+        return "already wired (groovy)"
     loader = (
         "\ndef keystoreProperties = new Properties()\n"
         "def keystorePropertiesFile = rootProject.file('key.properties')\n"
@@ -120,7 +129,6 @@ if 'signingConfigs.release' not in s:
         "}\n"
     )
     s = s.replace('android {', loader + '\nandroid {', 1)
-
     signing = (
         "    signingConfigs {\n"
         "        release {\n"
@@ -135,13 +143,56 @@ if 'signingConfigs.release' not in s:
     s = s.replace('signingConfig signingConfigs.debug',
                   'signingConfig signingConfigs.release')
     open(path, 'w').write(s)
-    print('release signing wired')
+    return "wired (groovy)"
+
+def patch_kts(path):
+    s = open(path).read()
+    if 'create("release")' in s:
+        return "already wired (kts)"
+    if 'import java.util.Properties' not in s:
+        s = 'import java.util.Properties\nimport java.io.FileInputStream\n\n' + s
+    loader = (
+        "\nval keystoreProperties = Properties()\n"
+        "val keystorePropertiesFile = rootProject.file(\"key.properties\")\n"
+        "if (keystorePropertiesFile.exists()) {\n"
+        "    keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n"
+        "}\n"
+    )
+    s = s.replace('android {', loader + '\nandroid {', 1)
+    signing = (
+        "    signingConfigs {\n"
+        "        create(\"release\") {\n"
+        "            keyAlias = keystoreProperties[\"keyAlias\"] as String\n"
+        "            keyPassword = keystoreProperties[\"keyPassword\"] as String\n"
+        "            storeFile = file(keystoreProperties[\"storeFile\"] as String)\n"
+        "            storePassword = keystoreProperties[\"storePassword\"] as String\n"
+        "        }\n"
+        "    }\n\n"
+    )
+    s = s.replace('    buildTypes {', signing + '    buildTypes {', 1)
+    s = s.replace('signingConfig = signingConfigs.getByName("debug")',
+                  'signingConfig = signingConfigs.getByName("release")')
+    open(path, 'w').write(s)
+    return "wired (kts)"
+
+g = 'android/app/build.gradle'
+k = 'android/app/build.gradle.kts'
+
+if os.path.isfile(g):
+    print(patch_groovy(g))
+elif os.path.isfile(k):
+    print(patch_kts(k))
 else:
-    print('release signing already present')
+    raise SystemExit('ERROR: no android/app/build.gradle[.kts] found')
+
+blob = ''
+for p in (g, k):
+    if os.path.isfile(p):
+        blob += open(p).read()
+if 'signingConfigs.release' not in blob and 'create("release")' not in blob:
+    raise SystemExit('ERROR: release signing was not wired')
+print('release signing VERIFIED')
 PY
-else
-  echo "WARNING: signing/release.jks missing — APK will be debug-signed"
-fi
 
 grep -n "uses-permission\|FileProvider" "$manifest" || true
 flutter pub get

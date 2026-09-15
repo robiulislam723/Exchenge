@@ -1,0 +1,2 @@
+# Keep the signing keystore byte-exact (never convert line endings in binaries).
+signing/*.jks binary
