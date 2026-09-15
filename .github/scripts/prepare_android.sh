@@ -116,82 +116,90 @@ cp signing/key.properties android/key.properties
 
 python3 - <<'PY'
 import os
+import sys
 
-def patch_groovy(path):
+def die(msg):
+    sys.stderr.write('ERROR: ' + msg + '\n')
+    raise SystemExit(1)
+
+def wire_groovy(path):
     s = open(path).read()
-    if "signingConfigs.release" in s:
-        return "already wired (groovy)"
-    loader = (
-        "\ndef keystoreProperties = new Properties()\n"
-        "def keystorePropertiesFile = rootProject.file('key.properties')\n"
-        "if (keystorePropertiesFile.exists()) {\n"
-        "    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))\n"
-        "}\n"
-    )
-    s = s.replace('android {', loader + '\nandroid {', 1)
-    signing = (
-        "    signingConfigs {\n"
-        "        release {\n"
-        "            keyAlias keystoreProperties['keyAlias']\n"
-        "            keyPassword keystoreProperties['keyPassword']\n"
-        "            storeFile file(keystoreProperties['storeFile'])\n"
-        "            storePassword keystoreProperties['storePassword']\n"
-        "        }\n"
-        "    }\n\n"
-    )
-    s = s.replace('    buildTypes {', signing + '    buildTypes {', 1)
+    if 'signingConfigs {' not in s:
+        loader = (
+            "\ndef keystoreProperties = new Properties()\n"
+            "def keystorePropertiesFile = rootProject.file('key.properties')\n"
+            "if (keystorePropertiesFile.exists()) {\n"
+            "    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))\n"
+            "}\n"
+        )
+        s = s.replace('android {', loader + '\nandroid {', 1)
+        signing = (
+            "    signingConfigs {\n"
+            "        release {\n"
+            "            keyAlias keystoreProperties['keyAlias']\n"
+            "            keyPassword keystoreProperties['keyPassword']\n"
+            "            storeFile file(keystoreProperties['storeFile'])\n"
+            "            storePassword keystoreProperties['storePassword']\n"
+            "        }\n"
+            "    }\n\n"
+        )
+        s = s.replace('    buildTypes {', signing + '    buildTypes {', 1)
+    # Flutter templates use either the method or the assignment syntax.
+    s = s.replace('signingConfig = signingConfigs.debug',
+                  'signingConfig = signingConfigs.release')
     s = s.replace('signingConfig signingConfigs.debug',
                   'signingConfig signingConfigs.release')
     open(path, 'w').write(s)
-    return "wired (groovy)"
 
-def patch_kts(path):
+def wire_kts(path):
     s = open(path).read()
-    if 'create("release")' in s:
-        return "already wired (kts)"
     if 'import java.util.Properties' not in s:
         s = 'import java.util.Properties\nimport java.io.FileInputStream\n\n' + s
-    loader = (
-        "\nval keystoreProperties = Properties()\n"
-        "val keystorePropertiesFile = rootProject.file(\"key.properties\")\n"
-        "if (keystorePropertiesFile.exists()) {\n"
-        "    keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n"
-        "}\n"
-    )
-    s = s.replace('android {', loader + '\nandroid {', 1)
-    signing = (
-        "    signingConfigs {\n"
-        "        create(\"release\") {\n"
-        "            keyAlias = keystoreProperties[\"keyAlias\"] as String\n"
-        "            keyPassword = keystoreProperties[\"keyPassword\"] as String\n"
-        "            storeFile = file(keystoreProperties[\"storeFile\"] as String)\n"
-        "            storePassword = keystoreProperties[\"storePassword\"] as String\n"
-        "        }\n"
-        "    }\n\n"
-    )
-    s = s.replace('    buildTypes {', signing + '    buildTypes {', 1)
+    if 'create("release")' not in s:
+        loader = (
+            "\nval keystoreProperties = Properties()\n"
+            "val keystorePropertiesFile = rootProject.file(\"key.properties\")\n"
+            "if (keystorePropertiesFile.exists()) {\n"
+            "    keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n"
+            "}\n"
+        )
+        s = s.replace('android {', loader + '\nandroid {', 1)
+        signing = (
+            "    signingConfigs {\n"
+            "        create(\"release\") {\n"
+            "            keyAlias = keystoreProperties[\"keyAlias\"] as String\n"
+            "            keyPassword = keystoreProperties[\"keyPassword\"] as String\n"
+            "            storeFile = file(keystoreProperties[\"storeFile\"] as String)\n"
+            "            storePassword = keystoreProperties[\"storePassword\"] as String\n"
+            "        }\n"
+            "    }\n\n"
+        )
+        s = s.replace('    buildTypes {', signing + '    buildTypes {', 1)
     s = s.replace('signingConfig = signingConfigs.getByName("debug")',
                   'signingConfig = signingConfigs.getByName("release")')
     open(path, 'w').write(s)
-    return "wired (kts)"
 
 g = 'android/app/build.gradle'
 k = 'android/app/build.gradle.kts'
 
 if os.path.isfile(g):
-    print(patch_groovy(g))
+    wire_groovy(g)
+    blob = open(g).read()
+    if 'signingConfigs.debug' in blob:
+        die('groovy build.gradle still points the release build at signingConfigs.debug')
+    if 'signingConfigs.release' not in blob:
+        die('groovy build.gradle has no release signing config')
+    print('release signing WIRED (groovy)')
 elif os.path.isfile(k):
-    print(patch_kts(k))
+    wire_kts(k)
+    blob = open(k).read()
+    if 'getByName("debug")' in blob:
+        die('kotlin build.gradle.kts still points the release build at debug')
+    if 'create("release")' not in blob:
+        die('kotlin build.gradle.kts has no release signing config')
+    print('release signing WIRED (kotlin)')
 else:
-    raise SystemExit('ERROR: no android/app/build.gradle[.kts] found')
-
-blob = ''
-for p in (g, k):
-    if os.path.isfile(p):
-        blob += open(p).read()
-if 'signingConfigs.release' not in blob and 'create("release")' not in blob:
-    raise SystemExit('ERROR: release signing was not wired')
-print('release signing VERIFIED')
+    die('no android/app/build.gradle[.kts] found')
 PY
 
 grep -n "uses-permission\|FileProvider" "$manifest" || true
