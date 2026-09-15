@@ -10,7 +10,7 @@ import 'package:path_provider/path_provider.dart';
 /// Checks GitHub Releases for a newer APK and installs it in-app.
 class UpdateService {
   static const String _owner = 'robiulislam723';
-  static const String _repo = 'exchenge.narailexpress.net';
+  static const String _repo = 'Exchenge';
 
   static Future<void> check(BuildContext context, {bool silent = true}) async {
     try {

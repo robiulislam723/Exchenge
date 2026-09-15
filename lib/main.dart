@@ -26,7 +26,7 @@ class ExchangeApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Narail Express Exchange',
+      title: 'Exchange',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: const Color(0xFF2563EB)),
       home: const WebAppScreen(),

@@ -15,6 +15,9 @@ cp -r /tmp/lib_backup lib
 
 manifest=android/app/src/main/AndroidManifest.xml
 
+# Launcher / app name shown on the device.
+sed -i 's#android:label="[^"]*"#android:label="Exchange"#' "$manifest"
+
 # Permissions: internet, camera/gallery uploads, and in-app APK installs.
 add_permission() {
   local perm="$1"
