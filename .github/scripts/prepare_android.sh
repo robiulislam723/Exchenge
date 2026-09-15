@@ -97,5 +97,51 @@ class MainActivity : FlutterActivity() {
 KT
 fi
 
+# ---------------------------------------------------------------------------
+# Stable release signing.
+# Without a fixed keystore every CI build is signed with a different debug key,
+# so installing an update forces an uninstall — which wipes app data (cookies)
+# and logs the user out. Signing every build with the same keystore lets
+# updates install in place and keeps the session.
+# ---------------------------------------------------------------------------
+if [ -f signing/release.jks ]; then
+  cp signing/release.jks android/app/release.jks
+  cp signing/key.properties android/key.properties
+
+  python3 - <<'PY'
+path = 'android/app/build.gradle'
+s = open(path).read()
+if 'signingConfigs.release' not in s:
+    loader = (
+        "\ndef keystoreProperties = new Properties()\n"
+        "def keystorePropertiesFile = rootProject.file('key.properties')\n"
+        "if (keystorePropertiesFile.exists()) {\n"
+        "    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))\n"
+        "}\n"
+    )
+    s = s.replace('android {', loader + '\nandroid {', 1)
+
+    signing = (
+        "    signingConfigs {\n"
+        "        release {\n"
+        "            keyAlias keystoreProperties['keyAlias']\n"
+        "            keyPassword keystoreProperties['keyPassword']\n"
+        "            storeFile file(keystoreProperties['storeFile'])\n"
+        "            storePassword keystoreProperties['storePassword']\n"
+        "        }\n"
+        "    }\n\n"
+    )
+    s = s.replace('    buildTypes {', signing + '    buildTypes {', 1)
+    s = s.replace('signingConfig signingConfigs.debug',
+                  'signingConfig signingConfigs.release')
+    open(path, 'w').write(s)
+    print('release signing wired')
+else:
+    print('release signing already present')
+PY
+else
+  echo "WARNING: signing/release.jks missing — APK will be debug-signed"
+fi
+
 grep -n "uses-permission\|FileProvider" "$manifest" || true
 flutter pub get

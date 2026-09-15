@@ -56,11 +56,17 @@ class _WebAppScreenState extends State<WebAppScreen> with WidgetsBindingObserver
   int _progress = 0;
 
   @override
+  Timer? _cookieTimer;
+
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _buildController();
     _watchConnectivity();
+    // Persist the login cookie to disk regularly while the app is open, so the
+    // session survives even when Android kills the process suddenly (which
+    // does not always deliver a clean 'paused' lifecycle event).
+    _cookieTimer = Timer.periodic(const Duration(seconds: 20), (_) => _flushCookies());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) UpdateService.check(context);
     });
@@ -68,6 +74,7 @@ class _WebAppScreenState extends State<WebAppScreen> with WidgetsBindingObserver
 
   @override
   void dispose() {
+    _cookieTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -115,6 +122,8 @@ class _WebAppScreenState extends State<WebAppScreen> with WidgetsBindingObserver
           onPageFinished: (_) {
             setState(() => _loading = false);
             _injectAppVersion();
+            // The session cookie is set during load; persist it immediately.
+            _flushCookies();
           },
           onWebResourceError: (error) {
             if (error.isForMainFrame ?? true) {
