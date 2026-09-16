@@ -239,6 +239,54 @@ class _WebAppScreenState extends State<WebAppScreen> with WidgetsBindingObserver
     }
   }
 
+  // Shows the installed version, the server and the current session state so
+  // it is obvious whether a new build actually got installed.
+  Future<void> _showAbout() async {
+    final info = await PackageInfo.fromPlatform();
+
+    String sessionInfo = 'unknown';
+    try {
+      final res = await _cookieChannel.invokeMethod('sessionStatus');
+      if (res is Map) {
+        final hasSession = res['hasSession'] == true;
+        final hasBackup = res['hasBackup'] == true;
+        sessionInfo = hasSession ? 'active' : 'not found';
+        sessionInfo += '  (saved copy: ${hasBackup ? 'yes' : 'no'})';
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('About Exchange'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Version: ${info.version}+${info.buildNumber}'),
+            const SizedBox(height: 8),
+            Text('Build: ${info.appName}'),
+            const SizedBox(height: 8),
+            Text('Server: ${WebAppScreen.appUrl}'),
+            const SizedBox(height: 8),
+            Text('Session: $sessionInfo'),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              UpdateService.check(context, silent: false);
+            },
+            child: const Text('Check for updates'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _watchConnectivity() async {
     Connectivity().onConnectivityChanged.listen((result) {
       final offline = result is List
@@ -299,6 +347,15 @@ class _WebAppScreenState extends State<WebAppScreen> with WidgetsBindingObserver
               tooltip: 'Back to top',
               onPressed: () => _controller.runJavaScript('window.scrollTo({top:0,behavior:"smooth"});'),
               child: const Icon(Icons.vertical_align_top),
+            ),
+            const SizedBox(height: 10),
+            FloatingActionButton.small(
+              heroTag: 'about',
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF2563EB),
+              tooltip: 'About / Update',
+              onPressed: _showAbout,
+              child: const Icon(Icons.info_outline),
             ),
           ],
         ),

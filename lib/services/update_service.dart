@@ -110,7 +110,18 @@ class UpdateService {
       await sink.close();
 
       if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
-      await OpenFilex.open(file.path);
+
+      final opened = await OpenFilex.open(file.path);
+      if (opened.type != ResultType.done && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Install blocked (${opened.message}). Allow "Install unknown apps" for Exchange and try again.',
+            ),
+            duration: const Duration(seconds: 8),
+          ),
+        );
+      }
     } catch (e) {
       if (context.mounted) {
         Navigator.of(context, rootNavigator: true).pop();

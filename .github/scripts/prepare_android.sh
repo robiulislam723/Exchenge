@@ -94,16 +94,29 @@ class MainActivity : FlutterActivity() {
         restoreCookies()
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
-                if (call.method == "flush") {
-                    try {
-                        saveCookies()
-                        CookieManager.getInstance().flush()
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("flush_failed", e.message, null)
+                when (call.method) {
+                    "flush" -> {
+                        try {
+                            saveCookies()
+                            CookieManager.getInstance().flush()
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("flush_failed", e.message, null)
+                        }
                     }
-                } else {
-                    result.notImplemented()
+                    "sessionStatus" -> {
+                        val cookie = try {
+                            CookieManager.getInstance().getCookie(cookieUrl) ?: ""
+                        } catch (e: Exception) { "" }
+                        val backup = getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+                            .getString(cookieKey, null) ?: ""
+                        result.success(mapOf(
+                            "hasSession" to cookie.contains("laravel_session"),
+                            "hasBackup" to backup.contains("laravel_session"),
+                            "cookieLength" to cookie.length
+                        ))
+                    }
+                    else -> result.notImplemented()
                 }
             }
     }
@@ -136,19 +149,23 @@ class MainActivity : FlutterActivity() {
             val cm = CookieManager.getInstance()
             cm.setAcceptCookie(true)
 
-            val existing = cm.getCookie(cookieUrl)
-            if (!existing.isNullOrBlank()) return
-
+            val existing = cm.getCookie(cookieUrl) ?: ""
             val saved = getSharedPreferences(prefsName, Context.MODE_PRIVATE)
                 .getString(cookieKey, null) ?: return
             if (saved.isBlank()) return
 
+            var restored = 0
             for (part in saved.split(";")) {
                 val kv = part.trim()
                 if (kv.isEmpty() || !kv.contains("=")) continue
+                val name = kv.substringBefore("=").trim()
+                if (name.isEmpty()) continue
+                // Only fill in cookies the WebView cookie store has lost.
+                if (existing.contains("\$name=")) continue
                 cm.setCookie(cookieUrl, "\$kv; path=/; domain=exchenge.narailexpress.net; Secure")
+                restored++
             }
-            cm.flush()
+            if (restored > 0) cm.flush()
         } catch (_: Exception) {}
     }
 }
