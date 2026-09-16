@@ -62,13 +62,17 @@ cat > android/app/src/main/res/xml/provider_paths.xml <<'XML'
 XML
 
 # MainActivity: expose a native method channel so Dart can flush WebView
-# cookies to disk on app pause (keeps the Laravel session alive).
+# cookies to disk on app pause (keeps the Laravel session alive), AND keep an
+# extra copy of the cookies in SharedPreferences so a hard process kill can
+# never drop the login session.
 main_activity=$(find android/app/src/main -name MainActivity.kt | head -1)
 if [ -n "$main_activity" ]; then
   pkg=$(grep -oE '^package[[:space:]]+[^[:space:]]+' "$main_activity" | awk '{print $2}')
   cat > "$main_activity" <<KT
 package ${pkg}
 
+import android.content.Context
+import android.os.Bundle
 import android.webkit.CookieManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -76,13 +80,23 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val channelName = "app/cookies"
+    private val prefsName = "webview_session"
+    private val cookieKey = "cookies"
+    private val cookieUrl = "https://exchenge.narailexpress.net"
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        restoreCookies()
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        restoreCookies()
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 if (call.method == "flush") {
                     try {
+                        saveCookies()
                         CookieManager.getInstance().flush()
                         result.success(true)
                     } catch (e: Exception) {
@@ -92,6 +106,50 @@ class MainActivity : FlutterActivity() {
                     result.notImplemented()
                 }
             }
+    }
+
+    override fun onPause() {
+        saveCookies()
+        CookieManager.getInstance().flush()
+        super.onPause()
+    }
+
+    override fun onStop() {
+        saveCookies()
+        CookieManager.getInstance().flush()
+        super.onStop()
+    }
+
+    /** Keep a copy of the WebView cookies outside the WebView store. */
+    private fun saveCookies() {
+        try {
+            val cookie = CookieManager.getInstance().getCookie(cookieUrl) ?: return
+            if (cookie.isBlank()) return
+            getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+                .edit().putString(cookieKey, cookie).apply()
+        } catch (_: Exception) {}
+    }
+
+    /** Put the saved cookies back before the first page load. */
+    private fun restoreCookies() {
+        try {
+            val cm = CookieManager.getInstance()
+            cm.setAcceptCookie(true)
+
+            val existing = cm.getCookie(cookieUrl)
+            if (!existing.isNullOrBlank()) return
+
+            val saved = getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+                .getString(cookieKey, null) ?: return
+            if (saved.isBlank()) return
+
+            for (part in saved.split(";")) {
+                val kv = part.trim()
+                if (kv.isEmpty() || !kv.contains("=")) continue
+                cm.setCookie(cookieUrl, "\$kv; path=/; domain=exchenge.narailexpress.net; Secure")
+            }
+            cm.flush()
+        } catch (_: Exception) {}
     }
 }
 KT
