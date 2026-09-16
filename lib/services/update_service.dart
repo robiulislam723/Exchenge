@@ -11,40 +11,30 @@ import 'package:path_provider/path_provider.dart';
 class UpdateService {
   static const String _owner = 'robiulislam723';
   static const String _repo = 'Exchenge';
+  static const String _apkName = 'app-release.apk';
 
   static Future<void> check(BuildContext context, {bool silent = true}) async {
     try {
       final info = await PackageInfo.fromPlatform();
       final current = _parseVersion(info.version);
 
-      final res = await http.get(
-        Uri.parse('https://api.github.com/repos/$_owner/$_repo/releases/latest'),
-        headers: {'Accept': 'application/vnd.github+json', 'User-Agent': 'exchenge-mobile'},
-      );
-      if (res.statusCode != 200) {
-        if (!silent && context.mounted) _toast(context, 'Update check failed (${res.statusCode})');
+      final tag = await _latestTag();
+      if (tag == null) {
+        if (!silent && context.mounted) {
+          _toast(context, 'Update check failed: could not reach GitHub');
+        }
         return;
       }
 
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final tag = (data['tag_name'] ?? '').toString();
       final latest = _parseVersion(tag.replaceAll(RegExp(r'[^0-9.]'), ''));
       if (latest <= current) {
-        if (!silent && context.mounted) _toast(context, 'You are on the latest version (${info.version})');
+        if (!silent && context.mounted) {
+          _toast(context, 'You are on the latest version (${info.version})');
+        }
         return;
       }
 
-      final assets = (data['assets'] as List?) ?? [];
-      dynamic apk;
-      for (final a in assets) {
-        if ((a['name'] ?? '').toString().toLowerCase().endsWith('.apk')) { apk = a; break; }
-      }
-      if (apk == null) {
-        if (!silent && context.mounted) _toast(context, 'No APK found in the latest release');
-        return;
-      }
-
-      final url = apk['browser_download_url'].toString();
+      final url = 'https://github.com/$_owner/$_repo/releases/download/$tag/$_apkName';
       if (!context.mounted) return;
 
       final go = await showDialog<bool>(
@@ -64,6 +54,39 @@ class UpdateService {
     } catch (e) {
       if (!silent && context.mounted) _toast(context, 'Update check failed: $e');
     }
+  }
+
+  /// Latest release tag. Uses the GitHub API first and falls back to the plain
+  /// web redirect (github.com/<owner>/<repo>/releases/latest), which is not
+  /// rate limited and works when the API is blocked.
+  static Future<String?> _latestTag() async {
+    try {
+      final res = await http
+          .get(
+            Uri.parse('https://api.github.com/repos/$_owner/$_repo/releases/latest'),
+            headers: {'Accept': 'application/vnd.github+json', 'User-Agent': 'exchenge-mobile'},
+          )
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final tag = (data['tag_name'] ?? '').toString().trim();
+        if (tag.isNotEmpty) return tag;
+      }
+    } catch (_) {}
+
+    try {
+      final req = http.Request('GET', Uri.parse('https://github.com/$_owner/$_repo/releases/latest'));
+      req.followRedirects = false;
+      final res = await req.send().timeout(const Duration(seconds: 15));
+      final loc = res.headers['location'] ?? '';
+      final m = RegExp(r'/releases/tag/(.+)$').firstMatch(loc);
+      if (m != null) {
+        final tag = Uri.decodeComponent(m.group(1)!).trim();
+        if (tag.isNotEmpty) return tag;
+      }
+    } catch (_) {}
+
+    return null;
   }
 
   static void _toast(BuildContext context, String message) {
@@ -96,8 +119,13 @@ class UpdateService {
     try {
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/exchenge-$tag.apk');
+      if (await file.exists()) await file.delete();
+
       final req = http.Request('GET', Uri.parse(url));
       final streamed = await req.send();
+      if (streamed.statusCode != 200) {
+        throw Exception('download failed (${streamed.statusCode})');
+      }
 
       final total = streamed.contentLength ?? 0;
       var received = 0;
