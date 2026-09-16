@@ -249,9 +249,12 @@ class _WebAppScreenState extends State<WebAppScreen> with WidgetsBindingObserver
       final res = await _cookieChannel.invokeMethod('sessionStatus');
       if (res is Map) {
         final hasSession = res['hasSession'] == true;
-        final hasBackup = res['hasBackup'] == true;
+        final names = (res['names'] as List?)?.cast<String>() ?? const <String>[];
+        final backupNames = (res['backupNames'] as List?)?.cast<String>() ?? const <String>[];
         sessionInfo = hasSession ? 'active' : 'not found';
-        sessionInfo += '  (saved copy: ${hasBackup ? 'yes' : 'no'})';
+        sessionInfo += '  (saved: ${backupNames.any((n) => n.endsWith('_session')) ? 'yes' : 'no'})';
+        sessionInfo += '\ncookies: ${names.isEmpty ? '(none)' : names.join(', ')}';
+        sessionInfo += '\nsaved cookies: ${backupNames.isEmpty ? '(none)' : backupNames.join(', ')}';
       }
     } catch (_) {}
 

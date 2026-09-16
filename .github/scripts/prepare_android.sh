@@ -110,15 +110,24 @@ class MainActivity : FlutterActivity() {
                         } catch (e: Exception) { "" }
                         val backup = getSharedPreferences(prefsName, Context.MODE_PRIVATE)
                             .getString(cookieKey, null) ?: ""
+                        val names = cookie.split(";").map { it.trim().substringBefore("=") }.filter { it.isNotEmpty() }
+                        val backupNames = backup.split(";").map { it.trim().substringBefore("=") }.filter { it.isNotEmpty() }
                         result.success(mapOf(
-                            "hasSession" to cookie.contains("laravel_session"),
-                            "hasBackup" to backup.contains("laravel_session"),
+                            "names" to names,
+                            "backupNames" to backupNames,
+                            "hasSession" to names.any { it.endsWith("_session") },
+                            "hasBackup" to backupNames.any { it.endsWith("_session") },
                             "cookieLength" to cookie.length
                         ))
                     }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        restoreCookies()
     }
 
     override fun onPause() {
